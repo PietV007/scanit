@@ -827,10 +827,66 @@ function switchTab(name) {
 function renderPrices(offers, productName) {
   document.getElementById('sheet-tabs').style.display = 'flex';
   const pb = document.getElementById('prices-body');
+
   if (!offers?.length) {
-    pb.innerHTML = `<div class="no-prices"><div style="font-size:36px;margin-bottom:10px">💸</div><p>No price data found.<br>Try searching online:</p><a href="https://www.google.com/search?tbm=shop&q=${encodeURIComponent(productName)}" target="_blank" class="search-link-btn" style="background:#34a853;margin-top:12px">🛒 Google Shopping →</a></div>`;
+    // Show loading state then kick off AI Takealot lookup
+    pb.innerHTML = `
+      <div style="padding:20px 0">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px">
+          <div style="font-size:24px">🇿🇦</div>
+          <div>
+            <div style="font-size:13px;font-weight:600">Searching Takealot for SA price…</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:'DM Mono',monospace">Asking AI to check live pricing</div>
+          </div>
+          <div style="margin-left:auto" id="price-spinner">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
+              </path>
+            </svg>
+          </div>
+        </div>
+        <div id="price-result-area"></div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <a href="https://www.takealot.com/all?_sb=1&_q=${encodeURIComponent(productName)}" target="_blank" class="search-link-btn" style="background:#0072ce">🇿🇦 Browse Takealot</a>
+          <a href="https://www.google.com/search?tbm=shop&q=${encodeURIComponent(productName)}" target="_blank" class="search-link-btn" style="background:#34a853">🛒 Google Shopping</a>
+        </div>
+      </div>`;
+
+    // Fire AI price search
+    claudeTakealotPrice(productName).then(result => {
+      const spinner = document.getElementById('price-spinner');
+      const area = document.getElementById('price-result-area');
+      if (spinner) spinner.style.display = 'none';
+      if (!area) return;
+
+      if (result && result.price) {
+        area.innerHTML = `
+          <div style="background:var(--surface);border:1px solid var(--green);border-radius:14px;padding:16px;margin-bottom:12px">
+            <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+              🇿🇦 Takealot Price (AI)
+            </div>
+            <div style="font-size:32px;font-weight:800;color:var(--green);font-family:'DM Mono',monospace">
+              ${result.price}
+            </div>
+            ${result.seller ? `<div style="font-size:12px;color:var(--text2);margin-top:4px">${result.seller}</div>` : ''}
+            ${result.availability ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:'DM Mono',monospace">${result.availability}</div>` : ''}
+            <div style="font-size:10px;color:var(--text3);margin-top:8px;font-family:'DM Mono',monospace">ℹ️ AI-sourced · verify on Takealot before purchasing</div>
+          </div>`;
+      } else {
+        area.innerHTML = `
+          <div style="text-align:center;padding:12px 0;color:var(--text3);font-size:13px;margin-bottom:8px">
+            No SA price found — not listed on Takealot
+          </div>`;
+      }
+    }).catch(() => {
+      const spinner = document.getElementById('price-spinner');
+      if (spinner) spinner.style.display = 'none';
+    });
     return;
   }
+
+  // International price data exists — show it
   const prices = offers.map(o => o.price).filter(p => p > 0).sort((a,b) => a-b);
   const avg = prices.reduce((a,b)=>a+b,0)/prices.length;
   const sorted = [...offers].filter(o=>o.price>0).sort((a,b)=>a.price-b.price);
@@ -840,7 +896,48 @@ function renderPrices(offers, productName) {
     <div class="price-summary-cell"><div class="price-summary-label">Highest</div><div class="price-summary-val" style="color:var(--text2)">$${prices[prices.length-1].toFixed(2)}</div></div>
   </div>
   ${sorted.map((o,i)=>`<div class="price-store-row"><div><div class="price-store-name">${o.merchant||o.seller||'Online Store'}${i===0?' 🏆':''}</div><div class="price-store-condition">${o.condition||'New'}</div></div><div class="price-store-val ${i===0?'best':i===sorted.length-1?'worst':'mid'}">$${o.price.toFixed(2)}</div></div>`).join('')}
-  <div style="font-size:11px;color:var(--text3);text-align:center;padding:8px 0;font-family:'DM Mono',monospace">Prices in USD · International listings</div>`;
+  <div style="font-size:11px;color:var(--text3);text-align:center;padding:8px 0;font-family:'DM Mono',monospace">Prices in USD · International listings</div>
+  <div style="margin-top:8px" id="price-result-area"></div>`;
+
+  // Also try Takealot for SA price even when international prices exist
+  claudeTakealotPrice(sorted[0]?.title || offers[0]?.title || productName).then(result => {
+    const area = document.getElementById('price-result-area');
+    if (!area || !result?.price) return;
+    area.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:4px">
+        <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">🇿🇦 Takealot (ZAR)</div>
+        <div style="font-size:22px;font-weight:700;color:var(--green);font-family:'DM Mono',monospace">${result.price}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace">ℹ️ AI-sourced · verify before purchasing</div>
+      </div>`;
+  }).catch(()=>{});
+}
+
+// ══ CLAUDE TAKEALOT PRICE SEARCH ══
+async function claudeTakealotPrice(productName) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      system: 'You are a price lookup assistant. Search Takealot.com for the product and return ONLY a JSON object with fields: price (string in ZAR format e.g. "R 89.99"), seller (string or null), availability (string or null). If not found on Takealot, return null. No extra text.',
+      messages: [{ role: 'user', content: `Search Takealot.com for current price of: ${productName}. Return JSON only.` }]
+    })
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  const textBlock = data.content?.find(b => b.type === 'text');
+  if (!textBlock) return null;
+  const text = textBlock.text.trim();
+  if (text === 'null' || !text) return null;
+  const match = text.match(/\{[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]);
+    if (!parsed.price) return null;
+    return parsed;
+  } catch(e) { return null; }
 }
 
 // ══ SHARE ══
