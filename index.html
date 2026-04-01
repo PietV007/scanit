@@ -1,16 +1,1516 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
-  <rect width="192" height="192" fill="#0d0d0d"/>
-  <rect x="20" y="20" width="152" height="152" rx="36" fill="#1a1a1a"/>
-  <!-- barcode lines -->
-  <rect x="44" y="60" width="8" height="72" rx="2" fill="#ff7a2f"/>
-  <rect x="58" y="60" width="4" height="72" rx="1" fill="#ff7a2f"/>
-  <rect x="68" y="60" width="10" height="72" rx="2" fill="#ff7a2f"/>
-  <rect x="84" y="60" width="4" height="72" rx="1" fill="#ff7a2f"/>
-  <rect x="94" y="60" width="8" height="72" rx="2" fill="#ff7a2f"/>
-  <rect x="108" y="60" width="6" height="72" rx="1" fill="#ff7a2f"/>
-  <rect x="120" y="60" width="10" height="72" rx="2" fill="#ff7a2f"/>
-  <rect x="136" y="60" width="4" height="72" rx="1" fill="#ff7a2f"/>
-  <rect x="146" y="60" width="4" height="72" rx="1" fill="#ff7a2f"/>
-  <!-- scan line -->
-  <rect x="36" y="93" width="120" height="3" rx="1.5" fill="#ff7a2f" opacity="0.5"/>
-</svg>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ScanIt">
+<title>ScanIt — Barcode Scanner</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:       #0d0d0d;
+  --bg2:      #141414;
+  --surface:  #1a1a1a;
+  --border:   #262626;
+  --border2:  #303030;
+  --accent:   #ff7a2f;
+  --accent2:  #ff5500;
+  --accentbg: rgba(255,122,47,0.08);
+  --green:    #3ddc84;
+  --red:      #ff4d6d;
+  --blue:     #4dabf7;
+  --text:     #f2f2f2;
+  --text2:    #999;
+  --text3:    #555;
+  --card-r:   18px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ═══════════════════════════════════════
+   VIEWS / ROUTING
+═══════════════════════════════════════ */
+.view {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  transform: translateY(12px);
+  overflow: hidden;
+}
+.view.active {
+  opacity: 1; pointer-events: all;
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════
+   NAV BAR
+═══════════════════════════════════════ */
+.nav {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: calc(62px + var(--safe-bot));
+  padding-bottom: var(--safe-bot);
+  background: rgba(13,13,13,0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: stretch;
+  z-index: 100;
+}
+
+.nav-btn {
+  flex: 1; background: none; border: none;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px;
+  color: var(--text3); cursor: pointer;
+  transition: color 0.2s;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px; font-weight: 500;
+  letter-spacing: 0.5px;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-btn.active { color: var(--accent); }
+.nav-btn svg { width: 22px; height: 22px; }
+
+/* ═══════════════════════════════════════
+   SCANNER VIEW
+═══════════════════════════════════════ */
+#view-scan {
+  background: #000;
+}
+
+#video-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+#cam-video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Overlay gradient */
+#video-container::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(13,13,13,0.7) 0%, transparent 25%, transparent 75%, rgba(13,13,13,0.85) 100%);
+  z-index: 2; pointer-events: none;
+}
+
+/* viewfinder */
+.viewfinder {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  width: 72%; max-width: 300px;
+  aspect-ratio: 5/2;
+  z-index: 3;
+}
+
+.vf-border {
+  position: absolute; inset: 0;
+  border: 2px solid rgba(255,122,47,0.3);
+  border-radius: 8px;
+}
+
+.vf-corner {
+  position: absolute;
+  width: 20px; height: 20px;
+  border-color: var(--accent);
+  border-style: solid;
+}
+.vf-corner.tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 6px 0 0 0; }
+.vf-corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 6px 0 0; }
+.vf-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 6px; }
+.vf-corner.br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 6px 0; }
+
+.vf-line {
+  position: absolute; left: 6%; right: 6%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--accent);
+  animation: scanline 2.2s ease-in-out infinite;
+  top: 0;
+}
+@keyframes scanline {
+  0%   { top: 4px;   opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: calc(100% - 4px); opacity: 0; }
+}
+
+.vf-hint {
+  position: absolute; bottom: -32px; left: 0; right: 0;
+  text-align: center;
+  font-size: 12px; color: rgba(255,255,255,0.5);
+  letter-spacing: 0.5px;
+}
+
+/* scan header */
+.scan-header {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: calc(var(--safe-top) + 16px) 20px 16px;
+  z-index: 4;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.scan-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px; letter-spacing: 2px;
+  color: var(--text);
+}
+.scan-logo span { color: var(--accent); }
+
+.scan-controls {
+  display: flex; gap: 10px;
+}
+
+.icon-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  transition: background 0.2s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn.on { background: var(--accent); border-color: var(--accent); color: #000; }
+
+/* scan bottom panel */
+.scan-bottom {
+  position: absolute; bottom: 62px; left: 0; right: 0;
+  padding: 16px 20px;
+  z-index: 4;
+}
+
+.status-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(13,13,13,0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border2);
+  border-radius: 100px;
+  padding: 8px 16px;
+  font-size: 13px; color: var(--text2);
+  font-family: 'DM Mono', monospace;
+  transition: all 0.3s;
+  margin-bottom: 12px;
+}
+.status-chip.scanning { border-color: var(--accent); color: var(--accent); }
+.status-chip.found { border-color: var(--green); color: var(--green); }
+.status-chip.error { border-color: var(--red); color: var(--red); }
+.status-chip.loading { border-color: var(--blue); color: var(--blue); }
+
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor;
+  animation: blink 1.2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.manual-row {
+  display: flex; gap: 8px;
+}
+
+.manual-input {
+  flex: 1;
+  background: rgba(26,26,26,0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 15px; color: var(--text);
+  outline: none;
+  letter-spacing: 1px;
+  transition: border-color 0.2s;
+  -webkit-appearance: none;
+}
+.manual-input:focus { border-color: var(--accent); }
+.manual-input::placeholder { color: var(--text3); letter-spacing: 0; font-size: 13px; }
+
+.go-btn {
+  width: 48px; height: 48px;
+  background: var(--accent);
+  border: none; border-radius: 12px;
+  color: #000; font-size: 20px;
+  cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.1s, background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.go-btn:active { transform: scale(0.93); background: var(--accent2); }
+
+/* camera off placeholder */
+.cam-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; z-index: 1;
+  background: radial-gradient(ellipse at center, #1a1a1a 0%, #0d0d0d 100%);
+}
+.cam-placeholder .big-icon { font-size: 52px; opacity: 0.4; }
+.cam-placeholder p { font-size: 14px; color: var(--text3); text-align: center; max-width: 220px; line-height: 1.5; }
+
+.start-btn {
+  background: var(--accent);
+  color: #000; border: none;
+  border-radius: 14px;
+  padding: 14px 28px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px; font-weight: 600;
+  cursor: pointer; margin-top: 8px;
+  transition: transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.start-btn:active { transform: scale(0.96); }
+
+/* ═══════════════════════════════════════
+   RESULT SHEET
+═══════════════════════════════════════ */
+.result-sheet {
+  position: absolute;
+  bottom: 62px; left: 0; right: 0;
+  max-height: 72vh;
+  background: var(--bg2);
+  border-top: 1px solid var(--border2);
+  border-radius: 20px 20px 0 0;
+  z-index: 10;
+  overflow-y: auto;
+  transform: translateY(110%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  -webkit-overflow-scrolling: touch;
+}
+.result-sheet.open { transform: translateY(0); }
+
+.sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  margin: 12px auto 0;
+}
+
+.sheet-close {
+  position: absolute; top: 12px; right: 16px;
+  width: 30px; height: 30px;
+  background: var(--surface);
+  border: none; border-radius: 50%;
+  color: var(--text2); font-size: 16px;
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet-body { padding: 8px 20px 24px; }
+
+.product-hero {
+  display: flex; gap: 14px;
+  align-items: flex-start;
+  padding: 16px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.product-img-wrap {
+  width: 80px; height: 80px; flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px;
+}
+.product-img-wrap img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
+
+.product-source {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  color: var(--text3); letter-spacing: 1px; text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.source-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+.product-brand {
+  font-size: 11px; font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.product-name {
+  font-size: 16px; font-weight: 600;
+  line-height: 1.3; color: var(--text);
+}
+
+.product-code {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--text3);
+  margin-top: 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.country-badge {
+  font-size: 11px; background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 6px;
+  color: var(--text2);
+}
+
+/* data grid */
+.data-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.data-cell.wide { grid-column: span 2; }
+
+.data-label {
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text3); margin-bottom: 4px;
+}
+.data-value {
+  font-size: 15px; font-weight: 600; color: var(--text);
+}
+.data-value.price {
+  font-size: 22px; color: var(--accent);
+  font-family: 'DM Mono', monospace;
+}
+.data-value.small { font-size: 13px; }
+
+/* nutrition */
+.nutrition-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.section-title {
+  font-size: 11px; font-family: 'DM Mono', monospace;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--text3); margin-bottom: 10px;
+}
+
+.nutrition-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.nutr-cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 6px;
+  text-align: center;
+}
+.nutr-val { font-size: 15px; font-weight: 700; color: var(--text); }
+.nutr-unit { font-size: 9px; color: var(--text3); }
+.nutr-label { font-size: 9px; color: var(--text2); margin-top: 2px; }
+
+/* description */
+.desc-section { padding: 14px 0; }
+.desc-text {
+  font-size: 13px; color: var(--text2);
+  line-height: 1.6;
+}
+
+/* action row */
+.action-row {
+  display: flex; gap: 10px;
+  padding: 14px 0 0;
+}
+
+.action-btn {
+  flex: 1; padding: 13px;
+  border-radius: 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; border: none;
+  transition: transform 0.1s, opacity 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.action-btn:active { transform: scale(0.96); }
+.action-btn.primary { background: var(--accent); color: #000; }
+.action-btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border2); }
+
+/* not found state */
+.not-found {
+  text-align: center; padding: 24px 0;
+}
+.not-found .nf-icon { font-size: 40px; margin-bottom: 12px; }
+.not-found h3 { font-size: 16px; margin-bottom: 6px; }
+.not-found p { font-size: 13px; color: var(--text2); line-height: 1.5; }
+
+/* ═══════════════════════════════════════
+   HISTORY VIEW
+═══════════════════════════════════════ */
+#view-history {
+  background: var(--bg);
+}
+
+.view-header {
+  padding: calc(var(--safe-top) + 20px) 20px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.view-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px; letter-spacing: 2px;
+}
+.view-title span { color: var(--accent); }
+
+.text-btn {
+  background: none; border: none;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--text3);
+  letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-scroll {
+  flex: 1; overflow-y: auto;
+  padding: 0 20px calc(80px + var(--safe-bot));
+  -webkit-overflow-scrolling: touch;
+}
+
+.history-group-label {
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  text-transform: uppercase; letter-spacing: 2px;
+  color: var(--text3); padding: 16px 0 8px;
+}
+
+.history-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.history-item:active { border-color: var(--accent); }
+
+.history-thumb {
+  width: 44px; height: 44px; flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; overflow: hidden;
+}
+.history-thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+.history-info { flex: 1; min-width: 0; }
+.history-name {
+  font-size: 14px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.history-sub {
+  font-size: 11px; color: var(--text3);
+  font-family: 'DM Mono', monospace;
+  margin-top: 2px;
+}
+
+.history-meta { text-align: right; flex-shrink: 0; }
+.history-time { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
+.history-fav { font-size: 14px; margin-top: 4px; cursor: pointer; }
+
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--text3);
+}
+.empty-state .e-icon { font-size: 48px; margin-bottom: 14px; opacity: 0.5; }
+.empty-state p { font-size: 14px; line-height: 1.6; }
+
+/* ═══════════════════════════════════════
+   SETTINGS VIEW
+═══════════════════════════════════════ */
+#view-settings {
+  background: var(--bg);
+}
+
+.settings-scroll {
+  flex: 1; overflow-y: auto;
+  padding: 0 20px calc(80px + var(--safe-bot));
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-group {
+  margin-bottom: 24px;
+}
+.settings-group-label {
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  text-transform: uppercase; letter-spacing: 2px;
+  color: var(--text3); padding: 16px 0 8px;
+}
+
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0; margin-bottom: 1px;
+}
+.settings-row:first-of-type { border-radius: 14px 14px 0 0; }
+.settings-row:last-of-type { border-radius: 0 0 14px 14px; margin-bottom: 0; }
+.settings-row:only-of-type { border-radius: 14px; }
+
+.settings-label { font-size: 14px; font-weight: 500; }
+.settings-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+/* toggle */
+.toggle {
+  width: 44px; height: 26px;
+  background: var(--border2);
+  border-radius: 13px; cursor: pointer;
+  position: relative; transition: background 0.2s;
+  flex-shrink: 0; border: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.toggle.on { background: var(--accent); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.toggle.on::after { transform: translateX(18px); }
+
+.version-info {
+  text-align: center;
+  padding: 20px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--text3);
+}
+
+/* ═══════════════════════════════════════
+   TOAST
+═══════════════════════════════════════ */
+.toast {
+  position: fixed; bottom: 80px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 100px;
+  padding: 10px 20px;
+  font-size: 13px; color: var(--text);
+  white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transition: all 0.3s;
+  z-index: 999;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ═══════════════════════════════════════
+   LOADING SKELETON
+═══════════════════════════════════════ */
+@keyframes shimmer {
+  0% { background-position: -300px 0; }
+  100% { background-position: 300px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border2) 50%, var(--surface) 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px;
+}
+
+/* ═══════════════════════════════════════
+   DETECTED FLASH
+═══════════════════════════════════════ */
+.detect-flash {
+  position: absolute; inset: 0;
+  background: rgba(255,122,47,0.15);
+  z-index: 5; pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.detect-flash.flash { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ══ TOAST ══ -->
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════
+     VIEW: SCAN
+══════════════════════════════════════ -->
+<div class="view active" id="view-scan">
+
+  <!-- Camera area -->
+  <div id="video-container">
+    <!-- camera feed -->
+    <video id="cam-video" autoplay muted playsinline></video>
+
+    <!-- detect flash -->
+    <div class="detect-flash" id="detect-flash"></div>
+
+    <!-- placeholder -->
+    <div class="cam-placeholder" id="cam-placeholder">
+      <div class="big-icon">📷</div>
+      <p>Tap below to start your camera and scan a product barcode</p>
+      <button class="start-btn" onclick="startCamera()">Start Camera</button>
+    </div>
+
+    <!-- viewfinder -->
+    <div class="viewfinder" id="viewfinder" style="display:none">
+      <div class="vf-border"></div>
+      <div class="vf-corner tl"></div>
+      <div class="vf-corner tr"></div>
+      <div class="vf-corner bl"></div>
+      <div class="vf-corner br"></div>
+      <div class="vf-line"></div>
+      <div class="vf-hint">Align barcode within frame</div>
+    </div>
+
+    <!-- header -->
+    <div class="scan-header">
+      <div class="scan-logo">SCAN<span>IT</span></div>
+      <div class="scan-controls">
+        <button class="icon-btn" id="torch-btn" onclick="toggleTorch()" title="Torch" style="display:none">🔦</button>
+        <button class="icon-btn" id="cam-toggle" onclick="toggleCamera()">⏹</button>
+      </div>
+    </div>
+
+    <!-- bottom controls -->
+    <div class="scan-bottom">
+      <div class="status-chip" id="status-chip">
+        <span class="status-dot" id="status-dot" style="display:none"></span>
+        <span id="status-text">Camera off — tap Start Camera</span>
+      </div>
+      <div class="manual-row">
+        <input class="manual-input" id="manual-input"
+          type="tel" inputmode="numeric" maxlength="14"
+          placeholder="Or type barcode…">
+        <button class="go-btn" onclick="manualLookup()">→</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Result sheet -->
+  <div class="result-sheet" id="result-sheet">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" onclick="closeSheet()">✕</button>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showView('scan')" id="nav-scan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+      Scan
+    </button>
+    <button class="nav-btn" onclick="showView('history')" id="nav-history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      History
+    </button>
+    <button class="nav-btn" onclick="showView('settings')" id="nav-settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </button>
+  </nav>
+</div>
+
+<!-- ══════════════════════════════════════
+     VIEW: HISTORY
+══════════════════════════════════════ -->
+<div class="view" id="view-history">
+  <div class="view-header">
+    <div class="view-title">SCAN <span>HISTORY</span></div>
+    <button class="text-btn" onclick="clearHistory()">Clear All</button>
+  </div>
+  <div class="history-scroll" id="history-list"></div>
+  <nav class="nav">
+    <button class="nav-btn" onclick="showView('scan')" id="nav-scan2">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+      Scan
+    </button>
+    <button class="nav-btn active" onclick="showView('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      History
+    </button>
+    <button class="nav-btn" onclick="showView('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </button>
+  </nav>
+</div>
+
+<!-- ══════════════════════════════════════
+     VIEW: SETTINGS
+══════════════════════════════════════ -->
+<div class="view" id="view-settings">
+  <div class="view-header">
+    <div class="view-title">SET<span>TINGS</span></div>
+  </div>
+  <div class="settings-scroll">
+    <div class="settings-group">
+      <div class="settings-group-label">Scanner</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Sound on scan</div>
+          <div class="settings-sub">Beep when barcode detected</div>
+        </div>
+        <button class="toggle on" id="toggle-sound" onclick="toggleSetting('sound')"></button>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Vibrate on scan</div>
+          <div class="settings-sub">Haptic feedback on detect</div>
+        </div>
+        <button class="toggle on" id="toggle-vibrate" onclick="toggleSetting('vibrate')"></button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-label">Data Sources</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">UPCitemdb</div>
+          <div class="settings-sub">Primary — global products</div>
+        </div>
+        <span style="font-size:12px;color:var(--green);font-family:'DM Mono',monospace">PRIMARY</span>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Open Food Facts</div>
+          <div class="settings-sub">Fallback — food & SA products</div>
+        </div>
+        <span style="font-size:12px;color:var(--blue);font-family:'DM Mono',monospace">FALLBACK</span>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <div class="settings-group-label">About</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Install as App</div>
+          <div class="settings-sub">Add to home screen for best experience</div>
+        </div>
+        <button class="toggle" id="toggle-install" onclick="promptInstall()">⊕</button>
+      </div>
+      <div class="settings-row" style="cursor:pointer" onclick="exportHistory()">
+        <div>
+          <div class="settings-label">Export History</div>
+          <div class="settings-sub">Share scan list via WhatsApp</div>
+        </div>
+        <span style="font-size:18px">↗</span>
+      </div>
+      <div class="settings-row" style="cursor:pointer" onclick="clearHistory()">
+        <div>
+          <div class="settings-label" style="color:var(--red)">Clear All History</div>
+          <div class="settings-sub">Remove all scanned items</div>
+        </div>
+        <span style="font-size:18px;color:var(--red)">🗑</span>
+      </div>
+    </div>
+
+    <div class="version-info">SCANIT v2.0 · Built for South Africa 🇿🇦</div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn" onclick="showView('scan')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+      Scan
+    </button>
+    <button class="nav-btn" onclick="showView('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      History
+    </button>
+    <button class="nav-btn active" onclick="showView('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </button>
+  </nav>
+</div>
+
+<!-- ZXing barcode library -->
+<script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+
+<script>
+// ══════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════
+const state = {
+  cameraRunning: false,
+  torchOn: false,
+  torchSupported: false,
+  stream: null,
+  codeReader: null,
+  cooldown: false,
+  settings: JSON.parse(localStorage.getItem('scanit-settings') || '{"sound":true,"vibrate":true}'),
+  history: JSON.parse(localStorage.getItem('scanit-history') || '[]'),
+  deferredInstall: null,
+  currentCode: null,
+};
+
+// ══════════════════════════════════════════
+//  ROUTING
+// ══════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll(`[onclick*="showView('${name}')"]`).forEach(b => b.classList.add('active'));
+  if (name === 'history') renderHistory();
+}
+
+// ══════════════════════════════════════════
+//  CAMERA
+// ══════════════════════════════════════════
+async function startCamera() {
+  document.getElementById('cam-placeholder').style.display = 'none';
+  setStatus('Requesting camera…', 'scanning');
+
+  try {
+    // Request permission explicitly first
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+
+    state.stream = stream;
+    const video = document.getElementById('cam-video');
+    video.srcObject = stream;
+    await video.play();
+
+    // Check torch support
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.torch) {
+      state.torchSupported = true;
+      document.getElementById('torch-btn').style.display = 'flex';
+    }
+
+    state.cameraRunning = true;
+    document.getElementById('viewfinder').style.display = 'block';
+    document.getElementById('cam-toggle').textContent = '⏹';
+
+    setStatus('Scanning…', 'scanning');
+    startZXing();
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('cam-placeholder').style.display = 'flex';
+    if (err.name === 'NotAllowedError') {
+      setStatus('Camera permission denied', 'error');
+      showToast('Please allow camera access in your browser settings');
+    } else {
+      setStatus('Camera error: ' + err.message, 'error');
+    }
+  }
+}
+
+function stopCamera() {
+  if (state.codeReader) {
+    try { state.codeReader.reset(); } catch(e) {}
+    state.codeReader = null;
+  }
+  if (state.stream) {
+    state.stream.getTracks().forEach(t => t.stop());
+    state.stream = null;
+  }
+  const video = document.getElementById('cam-video');
+  video.srcObject = null;
+  state.cameraRunning = false;
+  state.torchOn = false;
+  document.getElementById('torch-btn').style.display = 'none';
+  document.getElementById('viewfinder').style.display = 'none';
+  document.getElementById('cam-placeholder').style.display = 'flex';
+  document.getElementById('cam-toggle').textContent = '▶';
+  setStatus('Camera off — tap Start Camera');
+}
+
+function toggleCamera() {
+  if (state.cameraRunning) stopCamera();
+  else startCamera();
+}
+
+async function toggleTorch() {
+  if (!state.torchSupported || !state.stream) return;
+  const track = state.stream.getVideoTracks()[0];
+  state.torchOn = !state.torchOn;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: state.torchOn }] });
+    document.getElementById('torch-btn').classList.toggle('on', state.torchOn);
+  } catch(e) { showToast('Torch not available'); }
+}
+
+// ══════════════════════════════════════════
+//  ZXING SCANNING
+// ══════════════════════════════════════════
+function startZXing() {
+  if (!window.ZXing) { setStatus('Scanner library error', 'error'); return; }
+
+  const hints = new Map();
+  const formats = [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+  ];
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  state.codeReader = new ZXing.BrowserMultiFormatReader(hints);
+  const video = document.getElementById('cam-video');
+
+  // continuous decode from video stream
+  function decodeLoop() {
+    if (!state.cameraRunning || !state.codeReader) return;
+    try {
+      state.codeReader.decodeFromVideoElement(video, (result, err) => {
+        if (result && !state.cooldown) {
+          onDetected(result.getText());
+        }
+      });
+    } catch(e) {}
+  }
+
+  // Poll every 500ms
+  state.scanInterval = setInterval(() => {
+    if (!state.cameraRunning) { clearInterval(state.scanInterval); return; }
+    if (!state.codeReader) return;
+    try {
+      const canvas = document.createElement('canvas');
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return;
+      canvas.width = vw; canvas.height = vh;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+      const reader = new ZXing.MultiFormatReader();
+      reader.setHints(hints);
+      const res = reader.decode(binaryBitmap);
+      if (res && !state.cooldown) onDetected(res.getText());
+    } catch(e) { /* no barcode in frame */ }
+  }, 400);
+}
+
+function onDetected(code) {
+  state.cooldown = true;
+  setTimeout(() => { state.cooldown = false; }, 3500);
+
+  // Feedback
+  if (state.settings.vibrate && navigator.vibrate) navigator.vibrate([60, 30, 60]);
+  if (state.settings.sound) playBeep();
+
+  // Flash
+  const flash = document.getElementById('detect-flash');
+  flash.classList.add('flash');
+  setTimeout(() => flash.classList.remove('flash'), 200);
+
+  lookupBarcode(code);
+}
+
+// beep
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 1200;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════
+//  LOOKUP — CASCADE
+// ══════════════════════════════════════════
+async function lookupBarcode(code) {
+  state.currentCode = code;
+  setStatus(`Looking up ${code}…`, 'loading');
+  openSheet();
+  renderSheetLoading();
+
+  // Source 1: UPCitemdb (free, no key)
+  try {
+    const r = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${code}`);
+    const d = await r.json();
+    if (d.items && d.items.length > 0) {
+      renderProduct(code, d.items[0], 'UPCitemdb');
+      return;
+    }
+  } catch(e) {}
+
+  // Source 2: Open Food Facts (great for SA food)
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    const d = await r.json();
+    if (d.status === 1 && d.product) {
+      renderProductOFF(code, d.product);
+      return;
+    }
+  } catch(e) {}
+
+  // Not found
+  renderNotFound(code);
+}
+
+// ══════════════════════════════════════════
+//  RENDER — UPCITEMDB RESULT
+// ══════════════════════════════════════════
+function renderProduct(code, item, source) {
+  setStatus('Found: ' + (item.title || code), 'found');
+  addToHistory(code, item.title || 'Unknown', item.brand || '', item.images?.[0] || '', source);
+
+  const imgHtml = item.images?.length
+    ? `<img src="${item.images[0]}" onerror="this.parentElement.innerHTML='🏷️'">`
+    : '🏷️';
+
+  // price
+  let priceHtml = '';
+  const prices = (item.offers || []).map(o => o.price).filter(p => p > 0);
+  if (prices.length) {
+    const min = Math.min(...prices).toFixed(2);
+    const max = Math.max(...prices).toFixed(2);
+    priceHtml = `<div class="data-cell">
+      <div class="data-label">Listed Price (USD)</div>
+      <div class="data-value price">$${min === max ? min : min+'–$'+max}</div>
+    </div>`;
+  }
+
+  const country = getCountryFromEAN(code);
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="product-hero">
+      <div class="product-img-wrap">${imgHtml}</div>
+      <div style="flex:1;min-width:0">
+        <div class="product-source"><span class="source-dot"></span>${source}</div>
+        ${item.brand ? `<div class="product-brand">${item.brand}</div>` : ''}
+        <div class="product-name">${item.title || 'Unknown Product'}</div>
+        <div class="product-code">
+          ${code}
+          <span class="country-badge">${country}</span>
+        </div>
+      </div>
+    </div>
+    <div class="data-grid">
+      ${priceHtml}
+      ${item.category ? `<div class="data-cell ${!prices.length ? 'wide' : ''}">
+        <div class="data-label">Category</div>
+        <div class="data-value small">${item.category}</div>
+      </div>` : ''}
+      ${item.size ? `<div class="data-cell">
+        <div class="data-label">Size / Weight</div>
+        <div class="data-value small">${item.size}</div>
+      </div>` : ''}
+    </div>
+    ${item.description ? `
+    <div class="desc-section">
+      <div class="section-title">Description</div>
+      <div class="desc-text">${item.description.slice(0,250)}${item.description.length>250?'…':''}</div>
+    </div>` : ''}
+    <div class="action-row">
+      <button class="action-btn primary" onclick="shareProduct('${code}', \`${(item.title||'').replace(/`/g,"'")}\`, \`${(item.brand||'').replace(/`/g,"'")}\`)">Share via WhatsApp</button>
+      <button class="action-btn secondary" onclick="closeSheet()">Close</button>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════════
+//  RENDER — OPEN FOOD FACTS RESULT
+// ══════════════════════════════════════════
+function renderProductOFF(code, p) {
+  const name = p.product_name || p.product_name_en || 'Unknown Product';
+  const brand = p.brands || '';
+  const img = p.image_url || p.image_front_url || '';
+  setStatus('Found: ' + name, 'found');
+  addToHistory(code, name, brand, img, 'Open Food Facts');
+
+  const country = getCountryFromEAN(code);
+  const imgHtml = img ? `<img src="${img}" onerror="this.parentElement.innerHTML='🍽️'">` : '🍽️';
+
+  // nutrition
+  const n = p.nutriments || {};
+  const hasNutrition = n['energy-kcal_100g'] || n['proteins_100g'] || n['carbohydrates_100g'] || n['fat_100g'];
+
+  const nutritionHtml = hasNutrition ? `
+    <div class="nutrition-section">
+      <div class="section-title">Nutrition per 100g</div>
+      <div class="nutrition-grid">
+        <div class="nutr-cell">
+          <div class="nutr-val">${Math.round(n['energy-kcal_100g'] || 0)}</div>
+          <div class="nutr-unit">kcal</div>
+          <div class="nutr-label">Energy</div>
+        </div>
+        <div class="nutr-cell">
+          <div class="nutr-val">${(n['proteins_100g'] || 0).toFixed(1)}</div>
+          <div class="nutr-unit">g</div>
+          <div class="nutr-label">Protein</div>
+        </div>
+        <div class="nutr-cell">
+          <div class="nutr-val">${(n['carbohydrates_100g'] || 0).toFixed(1)}</div>
+          <div class="nutr-unit">g</div>
+          <div class="nutr-label">Carbs</div>
+        </div>
+        <div class="nutr-cell">
+          <div class="nutr-val">${(n['fat_100g'] || 0).toFixed(1)}</div>
+          <div class="nutr-unit">g</div>
+          <div class="nutr-label">Fat</div>
+        </div>
+      </div>
+    </div>` : '';
+
+  const allergens = p.allergens_tags?.map(a => a.replace('en:','')).join(', ') || '';
+  const quantity = p.quantity || '';
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="product-hero">
+      <div class="product-img-wrap">${imgHtml}</div>
+      <div style="flex:1;min-width:0">
+        <div class="product-source"><span class="source-dot"></span>Open Food Facts</div>
+        ${brand ? `<div class="product-brand">${brand}</div>` : ''}
+        <div class="product-name">${name}</div>
+        <div class="product-code">
+          ${code}
+          <span class="country-badge">${country}</span>
+        </div>
+      </div>
+    </div>
+    <div class="data-grid">
+      ${quantity ? `<div class="data-cell">
+        <div class="data-label">Quantity</div>
+        <div class="data-value small">${quantity}</div>
+      </div>` : ''}
+      ${allergens ? `<div class="data-cell ${!quantity ? 'wide' : ''}">
+        <div class="data-label">Allergens</div>
+        <div class="data-value small" style="color:var(--red)">${allergens}</div>
+      </div>` : ''}
+      ${p.nutriscore_grade ? `<div class="data-cell">
+        <div class="data-label">Nutri-Score</div>
+        <div class="data-value" style="text-transform:uppercase;color:${getNutriColor(p.nutriscore_grade)}">${p.nutriscore_grade}</div>
+      </div>` : ''}
+    </div>
+    ${nutritionHtml}
+    <div class="action-row">
+      <button class="action-btn primary" onclick="shareProduct('${code}', \`${name.replace(/`/g,"'")}\`, \`${brand.replace(/`/g,"'")}\`)">Share via WhatsApp</button>
+      <button class="action-btn secondary" onclick="closeSheet()">Close</button>
+    </div>
+  `;
+}
+
+function getNutriColor(grade) {
+  return {a:'#27ae60',b:'#8bc34a',c:'#ffc107',d:'#ff9800',e:'#f44336'}[grade] || 'var(--text)';
+}
+
+// ══════════════════════════════════════════
+//  NOT FOUND
+// ══════════════════════════════════════════
+function renderNotFound(code) {
+  setStatus('Not found: ' + code, 'error');
+  const country = getCountryFromEAN(code);
+  const mfr = getSAManufacturer(code);
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="not-found">
+      <div class="nf-icon">🔍</div>
+      <h3>Product Not Found</h3>
+      <p style="margin-bottom:16px">This barcode isn't in our databases yet.<br>Both UPCitemdb and Open Food Facts were checked.</p>
+      <div class="data-grid">
+        <div class="data-cell">
+          <div class="data-label">Barcode</div>
+          <div class="data-value small">${code}</div>
+        </div>
+        <div class="data-cell">
+          <div class="data-label">Origin</div>
+          <div class="data-value small">${country}</div>
+        </div>
+        ${mfr ? `<div class="data-cell wide">
+          <div class="data-label">Likely Manufacturer</div>
+          <div class="data-value small">${mfr}</div>
+        </div>` : ''}
+      </div>
+    </div>
+    <div class="action-row">
+      <button class="action-btn secondary" onclick="closeSheet()">Close</button>
+    </div>
+  `;
+}
+
+function renderSheetLoading() {
+  document.getElementById('sheet-body').innerHTML = `
+    <div style="padding:20px 0">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+        <div class="skeleton" style="width:80px;height:80px;border-radius:12px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div class="skeleton" style="height:10px;width:60%;margin-bottom:8px"></div>
+          <div class="skeleton" style="height:16px;width:90%;margin-bottom:6px"></div>
+          <div class="skeleton" style="height:10px;width:40%"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="skeleton" style="height:60px;border-radius:12px"></div>
+        <div class="skeleton" style="height:60px;border-radius:12px"></div>
+      </div>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════════
+//  SHEET CONTROLS
+// ══════════════════════════════════════════
+function openSheet() {
+  document.getElementById('result-sheet').classList.add('open');
+}
+function closeSheet() {
+  document.getElementById('result-sheet').classList.remove('open');
+}
+
+// ══════════════════════════════════════════
+//  SHARE
+// ══════════════════════════════════════════
+function shareProduct(code, name, brand) {
+  const text = `🏷️ *${name}*\n${brand ? '🔖 Brand: ' + brand + '\n' : ''}📊 Barcode: ${code}\n\nScanned with ScanIt`;
+  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
+}
+
+function exportHistory() {
+  if (!state.history.length) { showToast('No history to export'); return; }
+  const lines = state.history.map((h,i) => `${i+1}. ${h.name}${h.brand ? ' ('+h.brand+')' : ''}\n   📊 ${h.code}`).join('\n\n');
+  const text = `🛒 *My Scan History*\n\n${lines}\n\nScanned with ScanIt`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+// ══════════════════════════════════════════
+//  STATUS
+// ══════════════════════════════════════════
+function setStatus(msg, type) {
+  const chip = document.getElementById('status-chip');
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  chip.className = 'status-chip' + (type ? ' ' + type : '');
+  dot.style.display = type && type !== 'error' ? 'inline-block' : 'none';
+  txt.textContent = msg;
+}
+
+// ══════════════════════════════════════════
+//  MANUAL INPUT
+// ══════════════════════════════════════════
+function manualLookup() {
+  const val = document.getElementById('manual-input').value.trim();
+  if (!val || val.length < 8) { showToast('Enter a valid barcode number'); return; }
+  document.getElementById('manual-input').value = '';
+  document.getElementById('manual-input').blur();
+  lookupBarcode(val);
+}
+document.getElementById('manual-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') manualLookup();
+});
+
+// ══════════════════════════════════════════
+//  HISTORY
+// ══════════════════════════════════════════
+function addToHistory(code, name, brand, img, source) {
+  const entry = { code, name, brand, img, source, time: Date.now(), fav: false };
+  state.history = [entry, ...state.history.filter(h => h.code !== code)].slice(0, 50);
+  localStorage.setItem('scanit-history', JSON.stringify(state.history));
+}
+
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!state.history.length) {
+    el.innerHTML = `<div class="empty-state"><div class="e-icon">📭</div><p>No scans yet.<br>Scan a product barcode to get started.</p></div>`;
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  state.history.forEach(h => {
+    const label = dateLabel(h.time);
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(h);
+  });
+
+  el.innerHTML = Object.entries(groups).map(([label, items]) => `
+    <div class="history-group-label">${label}</div>
+    ${items.map((h, idx) => `
+      <div class="history-item" onclick="replayLookup('${h.code}')">
+        <div class="history-thumb">
+          ${h.img ? `<img src="${h.img}" onerror="this.parentElement.innerHTML='🏷️'">` : '🏷️'}
+        </div>
+        <div class="history-info">
+          <div class="history-name">${h.name}</div>
+          <div class="history-sub">${h.code} · ${h.source || ''}</div>
+        </div>
+        <div class="history-meta">
+          <div class="history-time">${timeAgo(h.time)}</div>
+        </div>
+      </div>
+    `).join('')}
+  `).join('');
+}
+
+function replayLookup(code) {
+  showView('scan');
+  setTimeout(() => lookupBarcode(code), 200);
+}
+
+function clearHistory() {
+  if (!confirm('Clear all scan history?')) return;
+  state.history = [];
+  localStorage.removeItem('scanit-history');
+  renderHistory();
+  showToast('History cleared');
+}
+
+function dateLabel(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = (now - d) / 86400000;
+  if (diff < 1 && now.getDate() === d.getDate()) return 'Today';
+  if (diff < 2 && now.getDate() - d.getDate() === 1) return 'Yesterday';
+  if (diff < 7) return d.toLocaleDateString('en-ZA', { weekday: 'long' });
+  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+// ══════════════════════════════════════════
+//  EAN INTELLIGENCE
+// ══════════════════════════════════════════
+function getCountryFromEAN(code) {
+  const pre = parseInt(code.substring(0,3));
+  if (pre >= 600 && pre <= 609) return '🇿🇦 South Africa';
+  if (pre >= 0   && pre <= 19)  return '🇺🇸 USA';
+  if (pre >= 20  && pre <= 29)  return '🇺🇸 USA (in-store)';
+  if (pre >= 30  && pre <= 37)  return '🇫🇷 France';
+  if (pre >= 40  && pre <= 44)  return '🇩🇪 Germany';
+  if (pre >= 45  && pre <= 49)  return '🇯🇵 Japan';
+  if (pre >= 50  && pre <= 59)  return '🇬🇧 UK';
+  if (pre >= 60  && pre <= 69)  return '🇺🇸 USA/Canada';
+  if (pre >= 70  && pre <= 79)  return '🇳🇴 Norway';
+  if (pre >= 80  && pre <= 83)  return '🇮🇹 Italy';
+  if (pre >= 84  && pre <= 84)  return '🇪🇸 Spain';
+  if (pre >= 87  && pre <= 87)  return '🇳🇱 Netherlands';
+  if (pre >= 90  && pre <= 91)  return '🇦🇹 Austria';
+  if (pre >= 93  && pre <= 93)  return '🇦🇺 Australia';
+  if (pre >= 611 && pre <= 611) return '🇲🇦 Morocco';
+  if (pre >= 621 && pre <= 621) return '🇸🇦 Saudi Arabia';
+  if (pre >= 628 && pre <= 628) return '🇸🇦 Saudi Arabia';
+  if (pre >= 629 && pre <= 629) return '🇦🇪 UAE';
+  if (pre >= 690 && pre <= 699) return '🇨🇳 China';
+  if (pre >= 761 && pre <= 761) return '🇨🇭 Switzerland';
+  if (pre >= 789 && pre <= 790) return '🇧🇷 Brazil';
+  return '🌍 International';
+}
+
+const SA_MANUFACTURERS = {
+  '6001011': 'Clover SA', '6001254': 'Tiger Brands', '6001120': 'Beacon Sweets',
+  '6001069': 'Pioneer Foods', '6001007': 'Pick n Pay', '6001008': 'Shoprite/Checkers',
+  '6001234': 'Woolworths SA', '6001063': 'Simba (PepsiCo)', '6001006': 'Nestlé SA',
+};
+
+function getSAManufacturer(code) {
+  if (!code.startsWith('600')) return '';
+  const prefix7 = code.substring(0, 7);
+  return SA_MANUFACTURERS[prefix7] || '';
+}
+
+// ══════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════
+function toggleSetting(key) {
+  state.settings[key] = !state.settings[key];
+  document.getElementById('toggle-' + key).classList.toggle('on', state.settings[key]);
+  localStorage.setItem('scanit-settings', JSON.stringify(state.settings));
+}
+
+function applySettings() {
+  Object.keys(state.settings).forEach(k => {
+    const el = document.getElementById('toggle-' + k);
+    if (el) el.classList.toggle('on', state.settings[k]);
+  });
+}
+
+// ══════════════════════════════════════════
+//  PWA INSTALL
+// ══════════════════════════════════════════
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  state.deferredInstall = e;
+  showToast('Tip: Add ScanIt to your home screen!');
+});
+
+function promptInstall() {
+  if (state.deferredInstall) {
+    state.deferredInstall.prompt();
+  } else {
+    showToast('Open in Chrome → Menu → Add to Home Screen');
+  }
+}
+
+// ══════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ══════════════════════════════════════════
+//  SERVICE WORKER
+// ══════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// Init
+applySettings();
+</script>
+</body>
+</html>
