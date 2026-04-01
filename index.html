@@ -1292,7 +1292,27 @@ async function lookupBarcode(code) {
     }
   } catch(e) {}
 
-  // All sources failed — show smart not-found with web search links
+  // Source 4: Open Beauty Facts (free — cosmetics, shampoo, skincare)
+  try {
+    const r = await fetch(`https://world.openbeautyfacts.org/api/v0/product/${code}.json`);
+    const d = await r.json();
+    if (d.status === 1 && d.product && d.product.product_name) {
+      renderProductOFF(code, d.product, 'Open Beauty Facts', '💄');
+      return;
+    }
+  } catch(e) {}
+
+  // Source 5: Open Products Facts (free — household, cleaning products)
+  try {
+    const r = await fetch(`https://world.openproductsfacts.org/api/v0/product/${code}.json`);
+    const d = await r.json();
+    if (d.status === 1 && d.product && d.product.product_name) {
+      renderProductOFF(code, d.product, 'Open Products Facts', '🧹');
+      return;
+    }
+  } catch(e) {}
+
+  // All 5 sources failed — show smart not-found with web search links
   renderNotFound(code);
 }
 
@@ -1361,16 +1381,18 @@ function renderProduct(code, item, source) {
 // ══════════════════════════════════════════
 //  RENDER — OPEN FOOD FACTS RESULT
 // ══════════════════════════════════════════
-function renderProductOFF(code, p) {
+function renderProductOFF(code, p, source, emoji) {
+  source = source || 'Open Food Facts';
+  emoji = emoji || '🍽️';
   const name = p.product_name || p.product_name_en || 'Unknown Product';
   const brand = p.brands || '';
   const img = p.image_url || p.image_front_url || '';
   setStatus('Found: ' + name, 'found');
-  addToHistory(code, name, brand, img, 'Open Food Facts');
+  addToHistory(code, name, brand, img, source);
   renderPrices([], name);
 
   const country = getCountryFromEAN(code);
-  const imgHtml = img ? `<img src="${img}" onerror="this.parentElement.innerHTML='🍽️'">` : '🍽️';
+  const imgHtml = img ? `<img src="${img}" onerror="this.parentElement.innerHTML='${emoji}'">` : emoji;
 
   // nutrition
   const n = p.nutriments || {};
@@ -1410,7 +1432,7 @@ function renderProductOFF(code, p) {
     <div class="product-hero">
       <div class="product-img-wrap">${imgHtml}</div>
       <div style="flex:1;min-width:0">
-        <div class="product-source"><span class="source-dot"></span>Open Food Facts</div>
+        <div class="product-source"><span class="source-dot"></span>${source}</div>
         ${brand ? `<div class="product-brand">${brand}</div>` : ''}
         <div class="product-name">${name}</div>
         <div class="product-code">
@@ -1498,7 +1520,7 @@ function renderNotFound(code) {
     <div class="not-found">
       <div class="nf-icon">🔍</div>
       <h3>Not in Any Database</h3>
-      <p style="margin-bottom:16px">Checked UPCitemdb, Open Food Facts, and Datakick — no match found. Try searching directly:</p>
+      <p style="margin-bottom:16px">Checked all 5 databases (UPCitemdb, Open Food Facts, Open Beauty Facts, Open Products Facts &amp; Datakick) — no match. Try searching directly:</p>
     </div>
 
     <div class="data-grid" style="margin-bottom:14px">
